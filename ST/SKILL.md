@@ -190,7 +190,7 @@ END_TYPE
 -  A reference instanciated with `REFERENCE TO` can be checked with __ISVALIDREF() 
 - If and guard clause for reference contains more than one conditions, use keyword AND_THEN
 - `POINTER TO` is acceptable only for usage of libraries provided by third parties  and low-level library interop.
-- Always check `POINTER TO` for validity before dereferencing: use `__ISVALIDREF()` guard.
+- Always check `POINTER TO` for validity before dereferencing: use `ptr <> 0` guard.
 - Never store a `POINTER TO` a local variable beyond the scope of the call.
 
 ### VAR sections
