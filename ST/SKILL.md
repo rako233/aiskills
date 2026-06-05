@@ -21,7 +21,7 @@ Apply this skill when:
 ## Core principles
 
 - Target platform is Beckhoff TwinCAT 3 PLC.
-- Language is Structured Text under IEC 61131-3.
+- Language is Structured Text under IEC 61131-3 including OOP extensions.
 - Beckhoff-specific behavior and common TwinCAT idioms apply.
 - Keyword capitalization is not semantic in ST, but generated code must be stylistically consistent throughout a project. 
 - Code must be deterministic, explicit, and scan-cycle-safe.
@@ -29,7 +29,7 @@ Apply this skill when:
 - Prefer composition over inheritance. Avoid inheritance whenever possible. If inheritance is used, limit it to one level.
 - All allocation is static. No dynamic memory allocation.
 
----
+
 
 ## Naming
 
@@ -39,6 +39,7 @@ Apply this skill when:
 - Names describe intent, not type or implementation detail.
 - Names must be clear and unambiguous without requiring context.
 - Methods that having a helper character which are often proteced or private method should have a "_" as prefix. 
+- Abstract classes can't be reviewed like a full implementation. No used variables have to be used in the child classes
 
 ### Capitalization
 
@@ -52,6 +53,9 @@ Apply this skill when:
 | Interfaces                     | I + PascalCase | `IControllable`   |
 | Constants                      | UPPERCASE   | `MAX_AXES`           |
 | Enum values                    | UPPERCASE   | `IDLE`, `RUNNING`    |
+
+
+- Capitalization is for readability and without function, since IEC61131-3 doesn't care about capitalization.
 
 ### Internal variables
 
@@ -76,12 +80,7 @@ Bad: `maxSpeed`, `averageTorque`, `filteredTemperature`
 - Methods represent actions: `enable()`, `reset()`, `init()`.
 - Properties represent states: `IsEnabled`, `HasError`, `Position`.
 
-### Initialization methods
 
-- `init()` for instance initialization.
-- `base_init()` when a base-level init is needed in a composition chain.
-
----
 
 ## Types
 
@@ -106,7 +105,6 @@ Use `INT`, `UINT`, `REAL`, `BYTE`, `WORD`, `DWORD`, `LWORD`, `SINT`, `USINT`, `U
 - Avoid relying on implicit type conversions. Use explicit conversion functions (`TO_LREAL`, `TO_DINT`, etc.).
 - Be aware that `REAL` to `LREAL` promotion can introduce precision artifacts. Convert early and stay in `LREAL`.
 
----
 
 ## Constants and enums
 
@@ -136,17 +134,17 @@ TYPE ControllerState :
 );
 END_TYPE
 ```
+## Classes
 
-
----
+- An abstract class can have empty methods and properties
+- A child class has the `EXTENDS` keyword in the declaration header
+- Child classes inherit all methods and properties of the parent class
 
 ## Arrays
 
 - Always 0-based indexing: `ARRAY[0..N-1]`.
 - Never use 1-based arrays.
 - Define array bounds with named constants: `ARRAY[0..MAX_AXES - 1] OF AxisData`.
-
----
 
 ## Loops
 
@@ -155,7 +153,18 @@ END_TYPE
 - Loop index variables are used only as indices — never reused for other purposes.
 - Avoid unbounded or long-running loops. Every loop must have a known maximum iteration count at compile time.
 
----
+## IO structures
+
+- An none trivial IO-struct consists usually of 3 parts
+	1. <CLASS>IO 
+    2. <CLASS>_In 
+    3. <CLASS>_Out
+
+- Trivial IO-structs are can have 1 to 2 files
+
+## Sequence of Methods and Properties
+
+Twincat sorts methods and properties automatically
 
 ## Architecture
 
@@ -168,13 +177,18 @@ END_TYPE
 ### Interface-based design
 
 - Define behavioral contracts as interfaces (`I` prefix).
+- Classes implementing the same interface do not have necessarily similar implementations!
 - Function blocks implement interfaces explicitly.
 - Depend on interfaces, not concrete function blocks, when a component needs to interact with interchangeable implementations.
 - Keep interfaces small and focused (interface segregation).
-- Use guard clauses when references are optional (`IF service <> 0 THEN ...`).
-- If and guard clause for reference contains more than one conditions, use keyword AND_THEN
+- All variables including interface arrays are initialized to 0 or the given initialization value. 
 
----
+### Guard clauses for `REFERENCE TO` and `INTERFACE`
+
+- Guard clauses are not used in helper functions
+- references declared by  `REFERENCE TO` have to be tested with `__ISVALIDREF()`
+- referenced declared by `INTERFACE` have to be tested on 0 . Example: `IF service <> 0 THEN ...`
+- If and guard clause for reference contains more than one condition, use keyword AND_THEN and test the reference first
 
 ### Static allocation
 
@@ -186,11 +200,8 @@ END_TYPE
 ### REFERENCE TO vs POINTER TO
 
 - Prefer `REFERENCE TO` over `POINTER TO` for passing references between function blocks.
-- `REFERENCE TO` is safer: it cannot be null by default and has clearer semantics.
 -  A reference instanciated with `REFERENCE TO` can be checked with __ISVALIDREF() 
-- If and guard clause for reference contains more than one conditions, use keyword AND_THEN
 - `POINTER TO` is acceptable only for usage of libraries provided by third parties  and low-level library interop.
-- Always check `POINTER TO` for validity before dereferencing: use `__ISVALIDREF()` guard.
 - Never store a `POINTER TO` a local variable beyond the scope of the call.
 
 ### VAR sections
@@ -202,20 +213,16 @@ END_TYPE
 - Never use `VAR_IN_OUT`.  `REFERENCE TO` replaces this section
 - Never use `VAR_OUTPUT`.  `REFERENCE TO` and `Property` replaces this section 
 
----
-
 ### Math and units
 - Use small epsilon thresholds for comparisons (`ABS(x) > 1E-6`).
-
----
 
 ## Lifecycle
 
 ### FB_init and FB_exit
 
-- `FB_init` is called automatically on initialization and online change. Use it only for setting default values that must survive online change.
+- Use an explicit `init()` or `init_base()` method called from the application for controlled initialization with parameters.
+- `FB_init` is used only in special cases and is called automatically on initialization and online change. 
 - Do not put complex logic in `FB_init`. It runs outside the normal scan cycle and has no guaranteed execution order relative to other blocks.
-- Use an explicit `init()` method called from the application for controlled initialization with parameters.
 - `FB_exit` is called on shutdown and before online change. Use it to release external resources (file handles, ADS connections) if applicable.
 - Be aware that `FB_init` is called again after every online change. Code in `FB_init` must be idempotent.
 
@@ -232,8 +239,6 @@ END_TYPE
 - Test that code behaves correctly after an online change — `FB_init` re-runs, `VAR` values may reset.
 - Use `{attribute 'no_assign'}` on function blocks that must not be copied, to prevent accidental assignment.
 
----
-
 ## State machines
 
 - Use enum-based state with a `CASE` structure.
@@ -242,8 +247,6 @@ END_TYPE
 - Every `CASE` has an `ELSE` branch that handles unexpected states (transition to `ERROR` or `IDLE`).
 - Avoid nested state machines when possible. Prefer flat state machines composed with sub-blocks.
 - Use an `update()` method to update  state machines
-
----
 
 ## Timers and timing
 
@@ -256,8 +259,11 @@ END_TYPE
 ## SEL()
 
 - The SEL() operator is specified as SEL(condition, Expression for False, Expression for True) -> Expression value
+- The SEL() operator is defined according to IEC61131-3. 
 
----
+```
+result := SEL( x > 0, ResultFalse, ResultTrue);
+```
 
 ## Error and State handling
 
@@ -268,15 +274,12 @@ END_TYPE
 - Errors propagate upward through composition — a parent block reflects child errors.
 - Never silently swallow errors. Every error must be observable from the outside.
 
----
-
 ## Pragmas and attributes
 
 - `{attribute 'qualified_only'}` — apply to enums so values must be accessed as `EnumType.VALUE`. Prefer this for all enums to avoid name collisions.
 - `{attribute 'strict'}` — apply to enums to enable strict type checking. Combine with `qualified_only`.
 - `{attribute 'no_explicit_call' := 'do not call this POU directly'}` - apply to classes  or functionblocks 
 - `{attribute 'conditionalshow_all_locals'}` apply to classes or functionblocks
----
 
 ## Persistent and retain variables
 
@@ -286,8 +289,6 @@ END_TYPE
 - Minimize the number of `PERSISTENT` and `RETAIN` variables — they have limited storage and impact boot time.
 - Never put large arrays or complex structures in `PERSISTENT` without understanding the storage impact.
 
----
-
 ## Scan cycle and real-time
 
 - Every function block's cyclic method must complete within a single scan cycle. No blocking, no waiting, no loops that span multiple cycles.
@@ -295,8 +296,6 @@ END_TYPE
 - Avoid `WHILE` loops with exit conditions that depend on external state — they can block the scan cycle.
 - Be aware of task cycle times. Code in a 1 ms task has a much tighter time budget than code in a 10 ms task.
 - Separate fast I/O processing from slow logic (HMI, logging, communication) into different tasks with appropriate priorities.
-
----
 
 ## Separation of concerns
 
@@ -306,15 +305,11 @@ END_TYPE
 - I/O mapping is separated from logic. Map physical I/O to a dedicated I/O function block or GVL, then pass values into logic blocks via inputs.
 - HMI data exchange is separated from control logic. Use dedicated HMI interface structs or GVLs.
 
----
-
 ## File format and structure
 - PLC sources are stored as XML (`.TcPOU`, `.TcDUT`, `.TcIO`).
 - Do not change XML headers/encodings; keep the BOM/encoding intact.
 - Keep the `<Declaration>` and `<Implementation>` CDATA blocks intact.
 - Use `FUNCTION_BLOCK`, `METHOD`, and `PROPERTY` consistently.
-
----
 
 ## Libraries
 
@@ -323,8 +318,6 @@ END_TYPE
 - `Tc2_Utilities` — string utilities, conversions, file operations. Use for `F_ToUpper`, `F_ToLower`, `CONCAT2`, etc.
 - `Tc3_Module` — TcCOM module development. Use only when building TcCOM objects.
 - Do not add library references that are not used. Keep dependencies minimal.
-
----
 
 ## Review rules
 
